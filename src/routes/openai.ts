@@ -9,7 +9,7 @@ import { uploadImage } from "../grok/upload";
 import { getDynamicHeaders } from "../grok/headers";
 import { createMediaPost, createPost } from "../grok/create";
 import { createOpenAiStreamFromGrokNdjson, parseOpenAiFromGrokNdjson } from "../grok/processor";
-import { buildAssetApiUrl } from "../grok/upstream";
+import { buildAssetApiUrl, buildGrokApiUrl } from "../grok/upstream";
 import { buildAuthCookie, normalizeSsoToken } from "../grok/cookie";
 import {
   IMAGE_METHOD_IMAGINE_WS_EXPERIMENTAL,
@@ -554,6 +554,9 @@ function summarizeUpstream403(args: {
   body: string;
   token: string;
   cfCookie: string;
+  upstreamTargetUrl: string;
+  proxyUrl: string;
+  assetProxyUrl: string;
 }): string {
   const contentType = args.upstream.headers.get("content-type") ?? "";
   const server = args.upstream.headers.get("server") ?? "";
@@ -569,10 +572,19 @@ function summarizeUpstream403(args: {
       : bodyLower.includes("<html")
         ? "html_block"
         : "unknown";
+  let targetHost = "";
+  try {
+    targetHost = new URL(args.upstreamTargetUrl).host;
+  } catch {
+    targetHost = "";
+  }
   return [
     `ct=${contentType || "-"}`,
     `server=${server || "-"}`,
     `cf_ray=${cfRay || "-"}`,
+    `target_host=${targetHost || "-"}`,
+    `proxy_set=${args.proxyUrl ? "1" : "0"}`,
+    `asset_proxy_set=${args.assetProxyUrl ? "1" : "0"}`,
     `token_form=${tokenForm}`,
     `token_cookie_like=${tokenLooksCookie ? "1" : "0"}`,
     `cf_present=${args.cfCookie ? "1" : "0"}`,
@@ -1308,6 +1320,10 @@ openAiRoutes.post("/chat/completions", async (c) => {
           settings: settingsBundle.grok,
         });
 
+        const upstreamTargetUrl = buildGrokApiUrl(
+          settingsBundle.grok,
+          "/rest/app-chat/conversations/new",
+        );
         const upstream = await sendConversationRequest({
           payload,
           cookie,
@@ -1323,6 +1339,9 @@ openAiRoutes.post("/chat/completions", async (c) => {
               body: txt,
               token: jwt,
               cfCookie: cf,
+              upstreamTargetUrl,
+              proxyUrl: String(settingsBundle.grok.proxy_url ?? "").trim(),
+              assetProxyUrl: String(settingsBundle.grok.cache_proxy_url ?? "").trim(),
             });
             lastErr = `Upstream 403: ${txt.slice(0, 200)} | diag: ${diag}`;
           } else {
