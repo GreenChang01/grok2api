@@ -10,6 +10,7 @@ import { getDynamicHeaders } from "../grok/headers";
 import { createMediaPost, createPost } from "../grok/create";
 import { createOpenAiStreamFromGrokNdjson, parseOpenAiFromGrokNdjson } from "../grok/processor";
 import { buildAssetApiUrl } from "../grok/upstream";
+import { buildAuthCookie } from "../grok/cookie";
 import {
   IMAGE_METHOD_IMAGINE_WS_EXPERIMENTAL,
   generateImagineWs,
@@ -545,7 +546,7 @@ function parseAllowedImageMime(file: File): string | null {
 }
 
 function buildCookie(token: string, cf: string): string {
-  return cf ? `sso-rw=${token};sso=${token};${cf}` : `sso-rw=${token};sso=${token}`;
+  return buildAuthCookie(token, cf);
 }
 
 async function runImageCall(args: {
@@ -1240,7 +1241,7 @@ openAiRoutes.post("/chat/completions", async (c) => {
 
       const jwt = chosen.token;
       const cf = normalizeCfCookie(settingsBundle.grok.cf_clearance ?? "");
-      const cookie = cf ? `sso-rw=${jwt};sso=${jwt};${cf}` : `sso-rw=${jwt};sso=${jwt}`;
+      const cookie = buildAuthCookie(jwt, cf);
 
       const { content, images } = extractContent(body.messages as any);
       const isVideoModel = Boolean(cfg.is_video_model);

@@ -36,6 +36,7 @@ import {
 } from "../repo/tokens";
 import { generateImagineWs, resolveAspectRatio } from "../grok/imagineExperimental";
 import { checkRateLimits } from "../grok/rateLimits";
+import { buildAuthCookie, normalizeSsoToken } from "../grok/cookie";
 import { addRequestLog, clearRequestLogs, getRequestLogs, getRequestStats } from "../repo/logs";
 import { getRefreshProgress, setRefreshProgress } from "../repo/refreshProgress";
 import {
@@ -69,11 +70,6 @@ function formatBytes(sizeBytes: number): string {
   const mb = 1024 * 1024;
   if (sizeBytes < mb) return `${(sizeBytes / kb).toFixed(1)} KB`;
   return `${(sizeBytes / mb).toFixed(1)} MB`;
-}
-
-function normalizeSsoToken(raw: string): string {
-  const t = (raw || "").trim();
-  return t.startsWith("sso=") ? t.slice(4).trim() : t;
 }
 
 async function clearKvCacheByType(
@@ -465,9 +461,7 @@ adminRoutes.get("/api/v1/admin/imagine/ws", async (c) => {
             continue;
           }
 
-          const cookie = cf
-            ? `sso-rw=${chosen.token};sso=${chosen.token};${cf}`
-            : `sso-rw=${chosen.token};sso=${chosen.token}`;
+          const cookie = buildAuthCookie(chosen.token, cf);
           const startAt = Date.now();
           const urls = await generateImagineWs({
             prompt,
@@ -730,7 +724,7 @@ adminRoutes.post("/api/v1/admin/tokens/refresh", requireAdminAuth, async (c) => 
     const results: Record<string, boolean> = {};
     for (const t of unique) {
       try {
-        const cookie = cf ? `sso-rw=${t};sso=${t};${cf}` : `sso-rw=${t};sso=${t}`;
+        const cookie = buildAuthCookie(t, cf);
         const tokenType = tokenTypeByToken.get(t) ?? "sso";
         const r = await checkRateLimits(cookie, settings.grok, "grok-4");
         const remaining = (r as any)?.remainingTokens;
@@ -994,7 +988,7 @@ adminRoutes.post("/api/tokens/tags", requireAdminAuth, async (c) => {
   try {
     const body = (await c.req.json()) as { token?: string; token_type?: string; tags?: string[] };
     const token_type = validateTokenType(String(body.token_type ?? ""));
-    const token = String(body.token ?? "");
+    const token = normalizeSsoToken(String(body.token ?? ""));
     const tags = Array.isArray(body.tags) ? body.tags : [];
     await updateTokenTags(c.env.DB, token, token_type, tags);
     return c.json({ success: true, message: "标签更新成功", tags });
@@ -1007,7 +1001,7 @@ adminRoutes.post("/api/tokens/note", requireAdminAuth, async (c) => {
   try {
     const body = (await c.req.json()) as { token?: string; token_type?: string; note?: string };
     const token_type = validateTokenType(String(body.token_type ?? ""));
-    const token = String(body.token ?? "");
+    const token = normalizeSsoToken(String(body.token ?? ""));
     const note = String(body.note ?? "");
     await updateTokenNote(c.env.DB, token, token_type, note);
     return c.json({ success: true, message: "备注更新成功", note });
@@ -1029,11 +1023,11 @@ adminRoutes.post("/api/tokens/test", requireAdminAuth, async (c) => {
   try {
     const body = (await c.req.json()) as { token?: string; token_type?: string };
     const token_type = validateTokenType(String(body.token_type ?? ""));
-    const token = String(body.token ?? "");
+    const token = normalizeSsoToken(String(body.token ?? ""));
     const settings = await getSettings(c.env);
 
     const cf = normalizeCfCookie(settings.grok.cf_clearance ?? "");
-    const cookie = cf ? `sso-rw=${token};sso=${token};${cf}` : `sso-rw=${token};sso=${token}`;
+    const cookie = buildAuthCookie(token, cf);
 
     const result = await checkRateLimits(cookie, settings.grok, "grok-4");
     if (result) {
@@ -1126,7 +1120,7 @@ adminRoutes.post("/api/tokens/refresh-all", requireAdminAuth, async (c) => {
         let failed = 0;
         for (let i = 0; i < tokens.length; i++) {
           const t = tokens[i]!;
-          const cookie = cf ? `sso-rw=${t.token};sso=${t.token};${cf}` : `sso-rw=${t.token};sso=${t.token}`;
+          const cookie = buildAuthCookie(t.token, cf);
           const r = await checkRateLimits(cookie, settings.grok, "grok-4");
           if (r) {
             const remaining = (r as any).remainingTokens;
