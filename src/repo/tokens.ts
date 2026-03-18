@@ -1,6 +1,7 @@
 import type { Env } from "../env";
 import { dbAll, dbFirst, dbRun } from "../db";
 import { nowMs } from "../utils/time";
+import { normalizeSsoToken } from "../grok/cookie";
 
 export type TokenType = "sso" | "ssoSuper";
 
@@ -98,7 +99,7 @@ export async function listTokens(db: Env["DB"]): Promise<TokenRow[]> {
 
 export async function addTokens(db: Env["DB"], tokens: string[], token_type: TokenType): Promise<number> {
   const now = nowMs();
-  const cleaned = tokens.map((t) => t.trim()).filter(Boolean);
+  const cleaned = [...new Set(tokens.map((t) => normalizeSsoToken(t)).filter(Boolean))];
   if (!cleaned.length) return 0;
 
   const stmts = cleaned.map((t) =>

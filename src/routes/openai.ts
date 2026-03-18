@@ -10,7 +10,7 @@ import { getDynamicHeaders } from "../grok/headers";
 import { createMediaPost, createPost } from "../grok/create";
 import { createOpenAiStreamFromGrokNdjson, parseOpenAiFromGrokNdjson } from "../grok/processor";
 import { buildAssetApiUrl } from "../grok/upstream";
-import { buildAuthCookie } from "../grok/cookie";
+import { buildAuthCookie, normalizeSsoToken } from "../grok/cookie";
 import {
   IMAGE_METHOD_IMAGINE_WS_EXPERIMENTAL,
   generateImagineWs,
@@ -547,6 +547,37 @@ function parseAllowedImageMime(file: File): string | null {
 
 function buildCookie(token: string, cf: string): string {
   return buildAuthCookie(token, cf);
+}
+
+function summarizeUpstream403(args: {
+  upstream: Response;
+  body: string;
+  token: string;
+  cfCookie: string;
+}): string {
+  const contentType = args.upstream.headers.get("content-type") ?? "";
+  const server = args.upstream.headers.get("server") ?? "";
+  const cfRay = args.upstream.headers.get("cf-ray") ?? "";
+  const tokenNormalized = normalizeSsoToken(args.token);
+  const tokenForm = tokenNormalized === args.token.trim() ? "raw" : "normalized";
+  const tokenLooksCookie = /(?:^|;\s*)(sso|sso-rw)=/.test(String(args.token ?? ""));
+  const bodyLower = args.body.toLowerCase();
+  const bodyHint = bodyLower.includes("cloudflare")
+    ? "cloudflare_challenge"
+    : bodyLower.includes("access denied")
+      ? "access_denied"
+      : bodyLower.includes("<html")
+        ? "html_block"
+        : "unknown";
+  return [
+    `ct=${contentType || "-"}`,
+    `server=${server || "-"}`,
+    `cf_ray=${cfRay || "-"}`,
+    `token_form=${tokenForm}`,
+    `token_cookie_like=${tokenLooksCookie ? "1" : "0"}`,
+    `cf_present=${args.cfCookie ? "1" : "0"}`,
+    `hint=${bodyHint}`,
+  ].join(" | ");
 }
 
 async function runImageCall(args: {
@@ -1286,7 +1317,17 @@ openAiRoutes.post("/chat/completions", async (c) => {
 
         if (!upstream.ok) {
           const txt = await upstream.text().catch(() => "");
-          lastErr = `Upstream ${upstream.status}: ${txt.slice(0, 200)}`;
+          if (upstream.status === 403) {
+            const diag = summarizeUpstream403({
+              upstream,
+              body: txt,
+              token: jwt,
+              cfCookie: cf,
+            });
+            lastErr = `Upstream 403: ${txt.slice(0, 200)} | diag: ${diag}`;
+          } else {
+            lastErr = `Upstream ${upstream.status}: ${txt.slice(0, 200)}`;
+          }
           await recordTokenFailure(c.env.DB, jwt, upstream.status, txt.slice(0, 200));
           await applyCooldown(c.env.DB, jwt, upstream.status);
           if (retryCodes.includes(upstream.status) && attempt < maxRetry - 1) continue;
