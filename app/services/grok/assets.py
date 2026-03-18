@@ -8,7 +8,6 @@ import os
 import time
 import hashlib
 import re
-import uuid
 from pathlib import Path
 from contextlib import asynccontextmanager
 try:
@@ -28,7 +27,7 @@ from app.core.exceptions import (
     UpstreamException, 
     ValidationException
 )
-from app.services.grok.statsig import StatsigService
+from app.services.grok.headers import build_headers, get_impersonate_browser
 
 
 # ==================== 常量 ====================
@@ -40,7 +39,7 @@ DOWNLOAD_API = "https://assets.grok.com"
 LOCK_DIR = Path(__file__).parent.parent.parent.parent / "data" / ".locks"
 
 TIMEOUT = 120
-BROWSER = "chrome136"
+BROWSER = get_impersonate_browser()
 DEFAULT_MIME = "application/octet-stream"
 
 # 并发控制
@@ -153,38 +152,14 @@ class BaseService:
     
     def _headers(self, token: str, referer: str = "https://grok.com/") -> dict:
         """构建请求头"""
-        headers = {
-            "Accept": "*/*",
-            "Accept-Encoding": "gzip, deflate, br, zstd",
-            "Accept-Language": "zh-CN,zh;q=0.9",
-            "Baggage": "sentry-environment=production,sentry-release=d6add6fb0460641fd482d767a335ef72b9b6abb8,sentry-public_key=b311e0f2690c81f25e2c4cf6d4f7ce1c",
-            "Cache-Control": "no-cache",
-            "Content-Type": "application/json",
-            "Origin": "https://grok.com",
-            "Pragma": "no-cache",
-            "Priority": "u=1, i",
-            "Referer": referer,
-            "Sec-Ch-Ua": '"Google Chrome";v="136", "Chromium";v="136", "Not(A:Brand";v="24"',
-            "Sec-Ch-Ua-Arch": "arm",
-            "Sec-Ch-Ua-Bitness": "64",
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Model": "",
-            "Sec-Ch-Ua-Platform": '"macOS"',
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-origin",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-        }
-        
-        # Statsig ID
-        headers["x-statsig-id"] = StatsigService.gen_id()
-        headers["x-xai-request-id"] = str(uuid.uuid4())
-        
-        # Cookie
-        token = token[4:] if token.startswith("sso=") else token
-        cf = get_config("grok.cf_clearance", "")
-        headers["Cookie"] = f"sso={token};cf_clearance={cf}" if cf else f"sso={token}"
-        
+        headers = build_headers(
+            token,
+            content_type="application/json",
+            origin="https://grok.com",
+            referer=referer,
+        )
+        headers["Cache-Control"] = "no-cache"
+        headers["Pragma"] = "no-cache"
         return headers
     
     def _proxies(self) -> Optional[dict]:
@@ -193,21 +168,21 @@ class BaseService:
     
     def _dl_headers(self, token: str, file_path: str) -> dict:
         """构建下载请求头"""
-        headers = {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "same-site",
-            "Sec-Fetch-User": "?1",
-            "Upgrade-Insecure-Requests": "1",
-            "Referer": "https://grok.com/",
-        }
-        
-        # Cookie
-        token = token[4:] if token.startswith("sso=") else token
-        cf = get_config("grok.cf_clearance", "")
-        headers["Cookie"] = f"sso={token};cf_clearance={cf}" if cf else f"sso={token}"
-        
+        suffix = Path(file_path).suffix.lower()
+        content_type = MIME_TYPES.get(suffix)
+        headers = build_headers(
+            token,
+            content_type=content_type,
+            origin="https://assets.grok.com",
+            referer="https://grok.com/",
+        )
+        headers["Cache-Control"] = "no-cache"
+        headers["Pragma"] = "no-cache"
+        headers["Priority"] = "u=0, i"
+        headers["Sec-Fetch-Mode"] = "navigate"
+        headers["Sec-Fetch-Site"] = "same-site"
+        headers["Sec-Fetch-User"] = "?1"
+        headers["Upgrade-Insecure-Requests"] = "1"
         return headers
     
     async def _get_session(self) -> AsyncSession:
