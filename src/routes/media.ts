@@ -3,6 +3,7 @@ import type { Env } from "../env";
 import { getSettings, normalizeCfCookie } from "../settings";
 import { applyCooldown, recordTokenFailure, selectBestToken } from "../repo/tokens";
 import { getDynamicHeaders } from "../grok/headers";
+import { buildAssetApiUrl } from "../grok/upstream";
 import { deleteCacheRow, touchCacheRow, upsertCacheRow, type CacheType } from "../repo/cache";
 import { nowMs } from "../utils/time";
 import { nextLocalMidnightExpirationSeconds } from "../kv/cleanup";
@@ -187,8 +188,10 @@ mediaRoutes.get("/images/:imgPath{.+}", async (c) => {
   if (!upstreamPath.startsWith("/")) upstreamPath = `/${upstreamPath}`;
   upstreamPath = upstreamPath.replace(/\/{2,}/g, "/");
 
+  const settingsBundle = await getSettings(c.env);
+
   const originalPath = upstreamUrl?.pathname ?? upstreamPath;
-  const url = upstreamUrl ?? new URL(`https://assets.grok.com${originalPath}`);
+  const url = new URL(buildAssetApiUrl(settingsBundle.grok, upstreamUrl?.toString() ?? originalPath));
   const type = detectTypeByPath(originalPath);
   const key = r2Key(type, imgPath);
   const cacheSeconds = guessCacheSeconds(originalPath);
@@ -206,7 +209,6 @@ mediaRoutes.get("/images/:imgPath{.+}", async (c) => {
   // stale metadata cleanup (best-effort)
   c.executionCtx.waitUntil(deleteCacheRow(c.env.DB, key));
 
-  const settingsBundle = await getSettings(c.env);
   const chosen = await selectBestToken(c.env.DB, "grok-4");
   if (!chosen) return c.text("No available token", 503);
 

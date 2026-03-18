@@ -9,6 +9,7 @@ import { uploadImage } from "../grok/upload";
 import { getDynamicHeaders } from "../grok/headers";
 import { createMediaPost, createPost } from "../grok/create";
 import { createOpenAiStreamFromGrokNdjson, parseOpenAiFromGrokNdjson } from "../grok/processor";
+import { buildAssetApiUrl } from "../grok/upstream";
 import {
   IMAGE_METHOD_IMAGINE_WS_EXPERIMENTAL,
   generateImagineWs,
@@ -289,13 +290,7 @@ async function fetchImageAsBase64(args: {
   cookie: string;
   settings: Awaited<ReturnType<typeof getSettings>>["grok"];
 }): Promise<string> {
-  let url: URL;
-  try {
-    url = new URL(args.rawUrl);
-  } catch {
-    const p = args.rawUrl.startsWith("/") ? args.rawUrl : `/${args.rawUrl}`;
-    url = new URL(`https://assets.grok.com${p}`);
-  }
+  const url = new URL(buildAssetApiUrl(args.settings, args.rawUrl));
 
   const headers = getDynamicHeaders(args.settings, url.pathname || "/");
   headers.Cookie = args.cookie;

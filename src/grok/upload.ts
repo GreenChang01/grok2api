@@ -1,8 +1,9 @@
 import type { GrokSettings } from "../settings";
 import { getDynamicHeaders } from "./headers";
 import { arrayBufferToBase64 } from "../utils/base64";
+import { buildGrokApiUrl } from "./upstream";
 
-const UPLOAD_API = "https://grok.com/rest/app-chat/upload-file";
+const UPLOAD_API_PATH = "/rest/app-chat/upload-file";
 
 const MIME_DEFAULT = "image/jpeg";
 
@@ -64,10 +65,10 @@ export async function uploadImage(
     content: base64,
   });
 
-  const headers = getDynamicHeaders(settings, "/rest/app-chat/upload-file");
+  const headers = getDynamicHeaders(settings, UPLOAD_API_PATH);
   headers.Cookie = cookie;
 
-  const resp = await fetch(UPLOAD_API, { method: "POST", headers, body });
+  const resp = await fetch(buildGrokApiUrl(settings, UPLOAD_API_PATH), { method: "POST", headers, body });
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
     throw new Error(`上传失败: ${resp.status} ${text.slice(0, 200)}`);
@@ -75,4 +76,3 @@ export async function uploadImage(
   const data = (await resp.json()) as { fileMetadataId?: string; fileUri?: string };
   return { fileId: data.fileMetadataId ?? "", fileUri: data.fileUri ?? "" };
 }
-

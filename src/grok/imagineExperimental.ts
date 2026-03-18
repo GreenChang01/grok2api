@@ -1,6 +1,7 @@
 import { sendConversationRequest } from "./conversation";
 import { getDynamicHeaders } from "./headers";
 import type { GrokSettings } from "../settings";
+import { buildGrokApiUrl } from "./upstream";
 
 export const IMAGE_METHOD_LEGACY = "legacy" as const;
 export const IMAGE_METHOD_IMAGINE_WS_EXPERIMENTAL = "imagine_ws_experimental" as const;
@@ -15,9 +16,8 @@ export type ImageGenerationMethod =
   | typeof IMAGE_METHOD_LEGACY
   | typeof IMAGE_METHOD_IMAGINE_WS_EXPERIMENTAL;
 
-const IMAGINE_WS_HTTP_API = "https://grok.com/ws/imagine/listen";
+const IMAGINE_WS_HTTP_PATH = "/ws/imagine/listen";
 const IMAGINE_REFERER = "https://grok.com/imagine";
-const ASSET_API = "https://assets.grok.com";
 
 type WsJson = Record<string, unknown>;
 
@@ -78,7 +78,7 @@ function normalizeAssetUrl(raw: string): string {
   const value = String(raw ?? "").trim();
   if (!value) return "";
   if (value.startsWith("http://") || value.startsWith("https://")) return value;
-  return `${ASSET_API}/${value.replace(/^\/+/, "")}`;
+  return `https://assets.grok.com/${value.replace(/^\/+/, "")}`;
 }
 
 function decodeWsData(data: unknown): string {
@@ -170,7 +170,7 @@ export async function generateImagineWs(args: {
   const aspectRatio = resolveAspectRatio(args.aspectRatio);
   const requestId = crypto.randomUUID();
 
-  const headers = getDynamicHeaders(args.settings, "/ws/imagine/listen");
+  const headers = getDynamicHeaders(args.settings, IMAGINE_WS_HTTP_PATH);
   headers.Cookie = args.cookie;
   headers.Origin = "https://grok.com";
   headers.Referer = IMAGINE_REFERER;
@@ -178,7 +178,10 @@ export async function generateImagineWs(args: {
   headers.Upgrade = "websocket";
   delete headers["Content-Type"];
 
-  const wsResp = await fetch(IMAGINE_WS_HTTP_API, { method: "GET", headers });
+  const wsResp = await fetch(buildGrokApiUrl(args.settings, IMAGINE_WS_HTTP_PATH), {
+    method: "GET",
+    headers,
+  });
   const ws = wsResp.webSocket;
   if (wsResp.status !== 101 || !ws) {
     const text = await wsResp.text().catch(() => "");

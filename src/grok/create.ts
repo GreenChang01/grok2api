@@ -1,7 +1,8 @@
 import type { GrokSettings } from "../settings";
 import { getDynamicHeaders } from "./headers";
+import { buildGrokApiUrl } from "./upstream";
 
-const ENDPOINT = "https://grok.com/rest/media/post/create";
+const CREATE_POST_API_PATH = "/rest/media/post/create";
 
 export type MediaPostType = "MEDIA_POST_TYPE_VIDEO" | "MEDIA_POST_TYPE_IMAGE";
 
@@ -10,7 +11,7 @@ export async function createMediaPost(
   cookie: string,
   settings: GrokSettings,
 ): Promise<{ postId: string }> {
-  const headers = getDynamicHeaders(settings, "/rest/media/post/create");
+  const headers = getDynamicHeaders(settings, CREATE_POST_API_PATH);
   headers.Cookie = cookie;
   headers.Referer = "https://grok.com/imagine";
 
@@ -25,7 +26,11 @@ export async function createMediaPost(
 
   const body = JSON.stringify(bodyObj);
 
-  const resp = await fetch(ENDPOINT, { method: "POST", headers, body });
+  const resp = await fetch(buildGrokApiUrl(settings, CREATE_POST_API_PATH), {
+    method: "POST",
+    headers,
+    body,
+  });
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
     throw new Error(`创建会话失败: ${resp.status} ${text.slice(0, 200)}`);
@@ -44,4 +49,3 @@ export async function createPost(
   const url = `https://assets.grok.com${path}`;
   return createMediaPost({ mediaType: "MEDIA_POST_TYPE_IMAGE", mediaUrl: url }, cookie, settings);
 }
-

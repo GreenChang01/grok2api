@@ -1,6 +1,7 @@
 import type { GrokSettings } from "../settings";
 import { getDynamicHeaders } from "./headers";
 import { getModelInfo, toGrokModel } from "./models";
+import { buildGrokApiUrl } from "./upstream";
 
 export interface OpenAIChatMessage {
   role: string;
@@ -19,7 +20,7 @@ export interface OpenAIChatRequestBody {
   };
 }
 
-export const CONVERSATION_API = "https://grok.com/rest/app-chat/conversations/new";
+const CONVERSATION_API_PATH = "/rest/app-chat/conversations/new";
 
 export function extractContent(messages: OpenAIChatMessage[]): { content: string; images: string[] } {
   const images: string[] = [];
@@ -165,10 +166,10 @@ export async function sendConversationRequest(args: {
   referer?: string;
 }): Promise<Response> {
   const { payload, cookie, settings, referer } = args;
-  const headers = getDynamicHeaders(settings, "/rest/app-chat/conversations/new");
+  const headers = getDynamicHeaders(settings, CONVERSATION_API_PATH);
   headers.Cookie = cookie;
   if (referer) headers.Referer = referer;
   const body = JSON.stringify(payload);
 
-  return fetch(CONVERSATION_API, { method: "POST", headers, body });
+  return fetch(buildGrokApiUrl(settings, CONVERSATION_API_PATH), { method: "POST", headers, body });
 }
