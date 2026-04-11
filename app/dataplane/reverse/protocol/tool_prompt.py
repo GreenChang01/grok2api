@@ -82,8 +82,13 @@ def extract_tool_names(tools: list[dict[str, Any]]) -> list[str]:
     return names
 
 
-def inject_into_message(message: str, system_prompt: str) -> str:
-    """Prepend the tool system prompt to the flattened message string."""
+def inject_into_message(message: str, system_prompt: str, tool_choice: Any = None) -> str:
+    """Prepend the tool system prompt and, for forced tool paths, restate the
+    output contract at the end of the prompt where the model is least likely to
+    ignore it."""
+    suffix = _build_output_contract_suffix(tool_choice)
+    if suffix:
+        return f"[system]: {system_prompt}\n\n{message}\n\n[user]: {suffix}"
     return f"[system]: {system_prompt}\n\n{message}"
 
 
@@ -155,3 +160,25 @@ def _build_choice_instruction(
             if forced_name:
                 return _CHOICE_FORCED.format(name=forced_name)
     return _CHOICE_AUTO
+
+
+def _build_output_contract_suffix(tool_choice: Any) -> str:
+    if tool_choice == "required":
+        return (
+            "Return ONLY a <tool_calls> XML block. Do not answer in natural language. "
+            "Choose the most relevant tool and fill its parameters with your best guess."
+        )
+    if isinstance(tool_choice, dict):
+        tc_type = tool_choice.get("type", "")
+        if tc_type == "required":
+            return (
+                "Return ONLY a <tool_calls> XML block. Do not answer in natural language."
+            )
+        if tc_type == "function":
+            forced_name = (tool_choice.get("function") or {}).get("name", "").strip()
+            if forced_name:
+                return (
+                    f'Return ONLY a <tool_calls> XML block calling "{forced_name}". '
+                    "Do not answer in natural language."
+                )
+    return ""

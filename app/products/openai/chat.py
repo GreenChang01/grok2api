@@ -326,7 +326,7 @@ async def completions(
     if tools:
         tool_names = extract_tool_names(tools)
         tool_prompt = build_tool_system_prompt(tools, tool_choice)
-        message = inject_into_message(message, tool_prompt)
+        message = inject_into_message(message, tool_prompt, tool_choice)
     tool_overrides: dict | None = None
 
     # ── Streaming path ────────────────────────────────────────────────────────
